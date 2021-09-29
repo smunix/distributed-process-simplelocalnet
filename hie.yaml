@@ -1,0 +1,22 @@
+cradle:
+  cabal:
+    - path: "src"
+      component: "lib:distributed-process-simplelocalnet"
+
+    - path: "tests/TestSimpleLocalnet.hs"
+      component: "distributed-process-simplelocalnet:exe:TestSimpleLocalnet"
+
+    - path: "src/TestSimpleLocalnet.hs"
+      component: "distributed-process-simplelocalnet:exe:TestSimpleLocalnet"
+
+    - path: "tests/Control/Distributed/Process/Backend/SimpleLocalnet.hs"
+      component: "distributed-process-simplelocalnet:exe:TestSimpleLocalnet"
+
+    - path: "tests/Control/Distributed/Process/Backend/SimpleLocalnet/Internal/Multicast.hs"
+      component: "distributed-process-simplelocalnet:exe:TestSimpleLocalnet"
+
+    - path: "src/Control/Distributed/Process/Backend/SimpleLocalnet.hs"
+      component: "distributed-process-simplelocalnet:exe:TestSimpleLocalnet"
+
+    - path: "src/Control/Distributed/Process/Backend/SimpleLocalnet/Internal/Multicast.hs"
+      component: "distributed-process-simplelocalnet:exe:TestSimpleLocalnet"

@@ -1,0 +1,97 @@
+{
+  "nodes": {
+    "dp": {
+      "inputs": {
+        "fu": "fu",
+        "np": "np"
+      },
+      "locked": {
+        "lastModified": 1632870455,
+        "narHash": "sha256-8DKpjAoJxbT/qVQC1J6GpJ1FQnxSTCaNaJSyV1psjmc=",
+        "ref": "1-nix-build",
+        "rev": "71f7ac796004c01043ba03b89923e79d3e7a6d39",
+        "revCount": 1225,
+        "type": "git",
+        "url": "file:///home/smunix/Programming/smunix.distrib/distributed-process"
+      },
+      "original": {
+        "ref": "1-nix-build",
+        "type": "git",
+        "url": "file:///home/smunix/Programming/smunix.distrib/distributed-process"
+      }
+    },
+    "fu": {
+      "locked": {
+        "lastModified": 1631561581,
+        "narHash": "sha256-3VQMV5zvxaVLvqqUrNz3iJelLw30mIVSfZmAaauM3dA=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "7e5bf3925f6fbdfaf50a2a7ca0be2879c4261d19",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "ref": "master",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "fu_2": {
+      "locked": {
+        "lastModified": 1631561581,
+        "narHash": "sha256-3VQMV5zvxaVLvqqUrNz3iJelLw30mIVSfZmAaauM3dA=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "7e5bf3925f6fbdfaf50a2a7ca0be2879c4261d19",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "ref": "master",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "np": {
+      "locked": {
+        "lastModified": 1632863929,
+        "narHash": "sha256-C3Pt0AR6ugP6uOe5VGlHelJuManTxDSE0o2bdbozOQQ=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "e8b91f3064525cde7c8766546fc0c1495aa1fe79",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "haskell-updates",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "np_2": {
+      "locked": {
+        "lastModified": 1632863929,
+        "narHash": "sha256-C3Pt0AR6ugP6uOe5VGlHelJuManTxDSE0o2bdbozOQQ=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "e8b91f3064525cde7c8766546fc0c1495aa1fe79",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "haskell-updates",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "dp": "dp",
+        "fu": "fu_2",
+        "np": "np_2"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

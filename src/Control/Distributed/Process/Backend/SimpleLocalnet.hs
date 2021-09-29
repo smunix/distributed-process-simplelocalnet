@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 -- | Simple backend based on the TCP transport which offers node discovery
 -- based on UDP multicast. This is a zero-configuration backend designed to
 -- get you going with Cloud Haskell quickly without imposing any structure
@@ -80,147 +82,157 @@
 -- then it might be that your firewall settings do not allow for UDP multicast
 -- (in particular, the default iptables on some Linux distributions might not
 -- allow it).
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Control.Distributed.Process.Backend.SimpleLocalnet
   ( -- * Initialization
-    Backend(..)
-  , initializeBackend
-    -- * Slave nodes
-  , startSlave
-  , terminateSlave
-  , findSlaves
-  , terminateAllSlaves
-    -- * Master nodes
-  , startMaster
-  ) where
+    Backend (..),
+    initializeBackend,
 
-import System.IO (fixIO)
-import Data.Maybe (catMaybes)
-import Data.Binary (Binary(get, put), getWord8, putWord8)
-import Data.Accessor (Accessor, accessor, (^:), (^.))
-import Data.Set (Set)
-import qualified Data.Set as Set (insert, empty, toList)
-import Data.Foldable (forM_)
-import Data.Typeable (Typeable)
+    -- * Slave nodes
+    startSlave,
+    terminateSlave,
+    findSlaves,
+    terminateAllSlaves,
+
+    -- * Master nodes
+    startMaster,
+  )
+where
+
 import Control.Applicative ((<$>))
+import Control.Concurrent (ThreadId, forkIO, threadDelay)
+import Control.Concurrent.MVar (MVar, modifyMVar_, newMVar, readMVar)
+import Control.Distributed.Process
+  ( NodeId,
+    NodeMonitorNotification (..),
+    Process,
+    ProcessId,
+    ProcessRegistrationException,
+    RemoteTable,
+    SendPort,
+    WhereIsReply (..),
+    bracket,
+    expect,
+    finally,
+    getSelfPid,
+    match,
+    monitor,
+    monitorNode,
+    newChan,
+    nsend,
+    nsendRemote,
+    processNodeId,
+    receiveChan,
+    receiveWait,
+    register,
+    reregister,
+    send,
+    try,
+    unmonitor,
+    whereis,
+    whereisRemoteAsync,
+  )
+import Control.Distributed.Process.Backend.SimpleLocalnet.Internal.Multicast (initMulticast)
+import qualified Control.Distributed.Process.Node as Node
+  ( LocalNode,
+    localNodeId,
+    newLocalNode,
+    runProcess,
+  )
 import Control.Exception (throw)
 import Control.Monad (forever, replicateM, replicateM_)
 import Control.Monad.IO.Class (liftIO)
-import Control.Concurrent (forkIO, threadDelay, ThreadId)
-import Control.Concurrent.MVar (MVar, newMVar, readMVar, modifyMVar_)
-import Control.Distributed.Process
-  ( RemoteTable
-  , NodeId
-  , Process
-  , ProcessId
-  , WhereIsReply(..)
-  , whereis
-  , whereisRemoteAsync
-  , getSelfPid
-  , register
-  , reregister
-  , expect
-  , nsendRemote
-  , receiveWait
-  , match
-  , processNodeId
-  , monitorNode
-  , monitor
-  , unmonitor
-  , NodeMonitorNotification(..)
-  , ProcessRegistrationException
-  , finally
-  , newChan
-  , receiveChan
-  , nsend
-  , SendPort
-  , bracket
-  , try
-  , send
-  )
-import qualified Control.Distributed.Process.Node as Node
-  ( LocalNode
-  , newLocalNode
-  , localNodeId
-  , runProcess
-  )
-import qualified Network.Transport.TCP as NT
-  ( createTransport
-  , defaultTCPParameters
-  )
-import qualified Network.Transport as NT (Transport)
+import Data.Accessor (Accessor, accessor, (^.), (^:))
+import Data.Binary (Binary (get, put), getWord8, putWord8)
+import Data.Foldable (forM_)
+import Data.Maybe (catMaybes)
+import Data.Set (Set)
+import qualified Data.Set as Set (empty, insert, toList)
+import Data.Typeable (Typeable)
 import qualified Network.Socket as N (HostName, ServiceName, SockAddr)
-import Control.Distributed.Process.Backend.SimpleLocalnet.Internal.Multicast (initMulticast)
+import qualified Network.Transport as NT (Transport)
+import qualified Network.Transport.TCP as NT
+  ( createTransport,
+    defaultTCPAddr,
+    defaultTCPParameters,
+  )
+import System.IO (fixIO)
 
 -- | Local backend
-data Backend = Backend {
-    -- | Create a new local node
-    newLocalNode :: IO Node.LocalNode
+data Backend = Backend
+  { -- | Create a new local node
+    newLocalNode :: IO Node.LocalNode,
     -- | @findPeers t@ broadcasts a /who's there?/ message on the local
     -- network, waits 't' microseconds, and then collects and returns the answers.
     -- You can use this to dynamically discover peer nodes.
-  , findPeers :: Int -> IO [NodeId]
+    findPeers :: Int -> IO [NodeId],
     -- | Make sure that all log messages are printed by the logger on the
     -- current node
-  , redirectLogsHere :: [ProcessId] -> Process ()
+    redirectLogsHere :: [ProcessId] -> Process ()
   }
 
-data BackendState = BackendState {
-   _localNodes      :: [Node.LocalNode]
- , _peers           :: Set NodeId
- ,  discoveryDaemon :: ThreadId
- }
+data BackendState = BackendState
+  { _localNodes :: [Node.LocalNode],
+    _peers :: Set NodeId,
+    discoveryDaemon :: ThreadId
+  }
 
 -- | Initialize the backend
 initializeBackend :: N.HostName -> N.ServiceName -> RemoteTable -> IO Backend
 initializeBackend host port rtable = do
-  mTransport   <- NT.createTransport host port (\sn -> (host, sn))
-                                     NT.defaultTCPParameters
-  (recv, sendp) <- initMulticast  "224.0.0.99" 9999 1024
+  mTransport <-
+    NT.createTransport
+      (NT.defaultTCPAddr host port)
+      NT.defaultTCPParameters
+  (recv, sendp) <- initMulticast "224.0.0.99" 9999 1024
   (_, backendState) <- fixIO $ \ ~(tid, _) -> do
-    backendState <- newMVar BackendState
-                      { _localNodes      = []
-                      , _peers           = Set.empty
-                      ,  discoveryDaemon = tid
-                      }
+    backendState <-
+      newMVar
+        BackendState
+          { _localNodes = [],
+            _peers = Set.empty,
+            discoveryDaemon = tid
+          }
     tid' <- forkIO $ peerDiscoveryDaemon backendState recv sendp
     return (tid', backendState)
   case mTransport of
     Left err -> throw err
     Right transport ->
-      let backend = Backend {
-          newLocalNode       = apiNewLocalNode transport rtable backendState
-        , findPeers          = apiFindPeers sendp backendState
-        , redirectLogsHere   = apiRedirectLogsHere backend
-        }
-      in return backend
+      let backend =
+            Backend
+              { newLocalNode = apiNewLocalNode transport rtable backendState,
+                findPeers = apiFindPeers sendp backendState,
+                redirectLogsHere = apiRedirectLogsHere backend
+              }
+       in return backend
 
 -- | Create a new local node
-apiNewLocalNode :: NT.Transport
-                -> RemoteTable
-                -> MVar BackendState
-                -> IO Node.LocalNode
+apiNewLocalNode ::
+  NT.Transport ->
+  RemoteTable ->
+  MVar BackendState ->
+  IO Node.LocalNode
 apiNewLocalNode transport rtable backendState = do
   localNode <- Node.newLocalNode transport rtable
   modifyMVar_ backendState $ return . (localNodes ^: (localNode :))
   return localNode
 
 -- | Peer discovery
-apiFindPeers :: (PeerDiscoveryMsg -> IO ())
-             -> MVar BackendState
-             -> Int
-             -> IO [NodeId]
+apiFindPeers ::
+  (PeerDiscoveryMsg -> IO ()) ->
+  MVar BackendState ->
+  Int ->
+  IO [NodeId]
 apiFindPeers sendfn backendState delay = do
   sendfn PeerDiscoveryRequest
   threadDelay delay
   Set.toList . (^. peers) <$> readMVar backendState
 
-data PeerDiscoveryMsg =
-    PeerDiscoveryRequest
+data PeerDiscoveryMsg
+  = PeerDiscoveryRequest
   | PeerDiscoveryReply NodeId
 
 instance Binary PeerDiscoveryMsg where
-  put PeerDiscoveryRequest     = putWord8 0
+  put PeerDiscoveryRequest = putWord8 0
   put (PeerDiscoveryReply nid) = putWord8 1 >> put nid
   get = do
     header <- getWord8
@@ -230,10 +242,11 @@ instance Binary PeerDiscoveryMsg where
       _ -> fail "PeerDiscoveryMsg.get: invalid"
 
 -- | Respond to peer discovery requests sent by other nodes
-peerDiscoveryDaemon :: MVar BackendState
-                    -> IO (PeerDiscoveryMsg, N.SockAddr)
-                    -> (PeerDiscoveryMsg -> IO ())
-                    -> IO ()
+peerDiscoveryDaemon ::
+  MVar BackendState ->
+  IO (PeerDiscoveryMsg, N.SockAddr) ->
+  (PeerDiscoveryMsg -> IO ()) ->
+  IO ()
 peerDiscoveryDaemon backendState recv sendfn = forever go
   where
     go = do
@@ -256,21 +269,19 @@ apiRedirectLogsHere _backend slavecontrollers = do
   myPid <- getSelfPid
 
   forM_ mLogger $ \logger -> do
+    bracket
+      (mapM monitor slavecontrollers)
+      (mapM unmonitor)
+      $ \_ -> do
+        -- fire off redirect requests
+        forM_ slavecontrollers $ \pid -> send pid (RedirectLogsTo logger myPid)
 
-  bracket
-   (mapM monitor slavecontrollers)
-   (mapM unmonitor)
-   $ \_ -> do
-
-   -- fire off redirect requests
-   forM_ slavecontrollers $ \pid -> send pid (RedirectLogsTo logger myPid)
-
-   -- Wait for the replies
-   replicateM_ (length slavecontrollers) $ do
-     receiveWait
-       [ match (\(RedirectLogsReply {}) -> return ())
-       , match (\(NodeMonitorNotification {}) -> return ())
-       ]
+        -- Wait for the replies
+        replicateM_ (length slavecontrollers) $ do
+          receiveWait
+            [ match (\(RedirectLogsReply {}) -> return ()),
+              match (\(NodeMonitorNotification {}) -> return ())
+            ]
 
 --------------------------------------------------------------------------------
 -- Slaves                                                                     --
@@ -281,18 +292,18 @@ apiRedirectLogsHere _backend slavecontrollers = do
 -- This datatype is not exposed; instead, we expose primitives for dealing
 -- with slaves.
 data SlaveControllerMsg
-   = SlaveTerminate
-   | RedirectLogsTo ProcessId ProcessId
+  = SlaveTerminate
+  | RedirectLogsTo ProcessId ProcessId
   deriving (Typeable, Show)
 
 instance Binary SlaveControllerMsg where
   put SlaveTerminate = putWord8 0
-  put (RedirectLogsTo a b) = do putWord8 1; put (a,b)
+  put (RedirectLogsTo a b) = do putWord8 1; put (a, b)
   get = do
     header <- getWord8
     case header of
       0 -> return SlaveTerminate
-      1 -> do (a,b) <- get; return (RedirectLogsTo a b)
+      1 -> do (a, b) <- get; return (RedirectLogsTo a b)
       _ -> fail "SlaveControllerMsg.get: invalid"
 
 data RedirectLogsReply
@@ -300,9 +311,9 @@ data RedirectLogsReply
   deriving (Typeable, Show)
 
 instance Binary RedirectLogsReply where
-  put (RedirectLogsReply from ok) = put (from,ok)
+  put (RedirectLogsReply from ok) = put (from, ok)
   get = do
-    (from,ok) <- get
+    (from, ok) <- get
     return (RedirectLogsReply from ok)
 
 -- | Calling 'slave' sets up a new local node and then waits. You start
@@ -318,9 +329,9 @@ startSlave backend = do
 -- | The slave controller interprets 'SlaveControllerMsg's
 slaveController :: Process ()
 slaveController = do
-    pid <- getSelfPid
-    register "slaveController" pid
-    go
+  pid <- getSelfPid
+  register "slaveController" pid
+  go
   where
     go = do
       msg <- expect
@@ -329,12 +340,12 @@ slaveController = do
         RedirectLogsTo loggerPid from -> do
           r <- try (reregister "logger" loggerPid)
           ok <- case (r :: Either ProcessRegistrationException ()) of
-                  Right _ -> return True
-                  Left _  -> do
-                    s <- try (register "logger" loggerPid)
-                    case (s :: Either ProcessRegistrationException ()) of
-                      Right _ -> return True
-                      Left _  -> return False
+            Right _ -> return True
+            Left _ -> do
+              s <- try (register "logger" loggerPid)
+              case (s :: Either ProcessRegistrationException ()) of
+                Right _ -> return True
+                Left _ -> return False
           pid <- getSelfPid
           send from (RedirectLogsReply pid ok)
           go
@@ -350,19 +361,21 @@ findSlaves backend = do
   -- Fire off asynchronous requests for the slave controller
 
   bracket
-   (mapM monitorNode nodes)
-   (mapM unmonitor)
-   $ \_ -> do
+    (mapM monitorNode nodes)
+    (mapM unmonitor)
+    $ \_ -> do
+      -- fire off whereis requests
+      forM_ nodes $ \nid -> whereisRemoteAsync nid "slaveController"
 
-   -- fire off whereis requests
-   forM_ nodes $ \nid -> whereisRemoteAsync nid "slaveController"
-
-   -- Wait for the replies
-   catMaybes <$> replicateM (length nodes) (
-     receiveWait
-       [ match (\(WhereIsReply "slaveController" mPid) -> return mPid)
-       , match (\(NodeMonitorNotification {}) -> return Nothing)
-       ])
+      -- Wait for the replies
+      catMaybes
+        <$> replicateM
+          (length nodes)
+          ( receiveWait
+              [ match (\(WhereIsReply "slaveController" mPid) -> return mPid),
+                match (\(NodeMonitorNotification {}) -> return Nothing)
+              ]
+          )
 
 -- | Terminate all slaves
 terminateAllSlaves :: Backend -> Process ()
@@ -399,23 +412,24 @@ startMaster backend proc = do
     proc (map processNodeId slaves) `finally` shutdownLogger
 
 --
+
 -- | shut down the logger process. This ensures that any pending
 -- messages are flushed before the process exits.
---
 shutdownLogger :: Process ()
 shutdownLogger = do
-  (sport,rport) <- newChan
+  (sport, rport) <- newChan
   nsend "logger" (sport :: SendPort ())
   receiveChan rport
-  -- TODO: we should monitor the logger process so we don't deadlock if
-  -- it has already died.
+
+-- TODO: we should monitor the logger process so we don't deadlock if
+-- it has already died.
 
 --------------------------------------------------------------------------------
 -- Accessors                                                                  --
 --------------------------------------------------------------------------------
 
 localNodes :: Accessor BackendState [Node.LocalNode]
-localNodes = accessor _localNodes (\ns st -> st { _localNodes = ns })
+localNodes = accessor _localNodes (\ns st -> st {_localNodes = ns})
 
 peers :: Accessor BackendState (Set NodeId)
-peers = accessor _peers (\ps st -> st { _peers = ps })
+peers = accessor _peers (\ps st -> st {_peers = ps})
