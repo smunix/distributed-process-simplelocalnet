@@ -8,16 +8,16 @@
       "locked": {
         "lastModified": 1632870455,
         "narHash": "sha256-8DKpjAoJxbT/qVQC1J6GpJ1FQnxSTCaNaJSyV1psjmc=",
-        "ref": "1-nix-build",
+        "owner": "smunix",
+        "repo": "distributed-process",
         "rev": "71f7ac796004c01043ba03b89923e79d3e7a6d39",
-        "revCount": 1225,
-        "type": "git",
-        "url": "file:///home/smunix/Programming/smunix.distrib/distributed-process"
+        "type": "github"
       },
       "original": {
+        "owner": "smunix",
         "ref": "1-nix-build",
-        "type": "git",
-        "url": "file:///home/smunix/Programming/smunix.distrib/distributed-process"
+        "repo": "distributed-process",
+        "type": "github"
       }
     },
     "fu": {
@@ -70,11 +70,11 @@
     },
     "np_2": {
       "locked": {
-        "lastModified": 1632863929,
-        "narHash": "sha256-C3Pt0AR6ugP6uOe5VGlHelJuManTxDSE0o2bdbozOQQ=",
+        "lastModified": 1632901364,
+        "narHash": "sha256-iZsi8dfYvkmnxbZ3EWiRrsC218AIgwPmiQAnyHRD3EA=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "e8b91f3064525cde7c8766546fc0c1495aa1fe79",
+        "rev": "8eb243a24dd733706914240b7332af38c6c5e21e",
         "type": "github"
       },
       "original": {

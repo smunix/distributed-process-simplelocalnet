@@ -3,8 +3,11 @@
   inputs = {
     np.url = "github:nixos/nixpkgs/haskell-updates";
     fu.url = "github:numtide/flake-utils/master";
-    dp.url =
-      "git+file:///home/smunix/Programming/smunix.distrib/distributed-process?ref=1-nix-build";
+    # dp.url =
+    #   "git+file:///home/smunix/Programming/smunix.distrib/distributed-process?ref=1-nix-build";
+    # dp.url =
+    #   "gitlab:smunix.parconc/distrib/distributed-process?ref=1-nix-build";
+    dp.url = "github:smunix/distributed-process?ref=1-nix-build";
   };
   outputs = { self, np, fu, dp }:
     with fu.lib;
